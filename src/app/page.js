@@ -11,6 +11,8 @@ export default function Home() {
   const [feedbackList, setFeedbackList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -38,7 +40,7 @@ export default function Home() {
     fetchFeedback();
   }, []);
 
-  // Submit feedback to the backend
+  // Submit new feedback or update existing feedback
   async function handleSubmit(e) {
     e.preventDefault();
 
@@ -67,39 +69,119 @@ export default function Home() {
     setSubmitting(true);
 
     try {
-      const response = await fetch("/api/feedback", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: cleanName,
-          message: cleanMessage,
-          rating,
-        }),
-      });
+      const isEditing = editingId !== null;
+
+      const response = await fetch(
+        isEditing ? `/api/feedback/${editingId}` : "/api/feedback",
+        {
+          method: isEditing ? "PUT" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: cleanName,
+            message: cleanMessage,
+            rating,
+          }),
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to submit feedback.");
+        throw new Error(data.error || "Failed to save feedback.");
       }
 
-      // Add the newly saved feedback to the list
-      setFeedbackList((previous) => [data, ...previous]);
+      if (isEditing) {
+        setFeedbackList((previous) =>
+          previous.map((feedback) =>
+            feedback.id === editingId ? data : feedback
+          )
+        );
 
-      // Clear the form
+        setSuccess("Feedback updated successfully!");
+
+      } else {
+        setFeedbackList((previous) => [data, ...previous]);
+
+        setSuccess("Your feedback was submitted successfully!");
+      }
+
+      // Reset the form
       setName("");
       setMessage("");
       setRating(0);
-
-      setSuccess("Your feedback was submitted successfully!");
+      setEditingId(null);
 
     } catch (err) {
       setError(err.message);
 
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  // Start editing feedback
+  function handleEdit(feedback) {
+    setEditingId(feedback.id);
+    setName(feedback.name);
+    setMessage(feedback.message);
+    setRating(feedback.rating);
+
+    setError("");
+    setSuccess("");
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  // Cancel editing
+  function handleCancelEdit() {
+    setEditingId(null);
+    setName("");
+    setMessage("");
+    setRating(0);
+    setError("");
+    setSuccess("");
+  }
+
+  // Delete feedback
+  async function handleDelete(id) {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this feedback?"
+    );
+
+    if (!confirmed) return;
+
+    setError("");
+    setSuccess("");
+
+    try {
+      const response = await fetch(`/api/feedback/${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to delete feedback.");
+      }
+
+      setFeedbackList((previous) =>
+        previous.filter((feedback) => feedback.id !== id)
+      );
+
+      // If the deleted entry was being edited, reset the form
+      if (editingId === id) {
+        handleCancelEdit();
+      }
+
+      setSuccess("Feedback deleted successfully!");
+
+    } catch (err) {
+      setError(err.message);
     }
   }
 
@@ -135,18 +217,20 @@ export default function Home() {
         </p>
       </section>
 
-      {/* Main content */}
+      {/* Main Content */}
       <section className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-2">
 
-        {/* Feedback form */}
+        {/* Feedback Form */}
         <div className="h-fit rounded-2xl border border-zinc-800 bg-[#191c28] p-6 md:p-8">
 
           <h2 className="text-xl font-semibold">
-            Leave your feedback
+            {editingId !== null ? "Edit your feedback" : "Leave your feedback"}
           </h2>
 
           <p className="mt-2 text-sm text-zinc-400">
-            We'd love to hear what you think.
+            {editingId !== null
+              ? "Make changes to your feedback below."
+              : "We'd love to hear what you think."}
           </p>
 
           <form onSubmit={handleSubmit} className="mt-7 space-y-5">
@@ -212,32 +296,48 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Error and success messages */}
+            {/* Error Message */}
             {error && (
-              <p className="text-sm text-red-400">
+              <p className="text-sm text-red-400" role="alert">
                 {error}
               </p>
             )}
 
+            {/* Success Message */}
             {success && (
-              <p className="text-sm text-green-400">
+              <p className="text-sm text-green-400" role="status">
                 {success}
               </p>
             )}
 
-            {/* Submit */}
+            {/* Cancel Editing */}
+            {editingId !== null && (
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                className="w-full rounded-lg border border-zinc-700 py-3 text-sm text-zinc-300 transition hover:bg-zinc-800"
+              >
+                Cancel Editing
+              </button>
+            )}
+
+            {/* Submit / Update Button */}
             <button
               type="submit"
               disabled={submitting}
               className="w-full rounded-lg bg-violet-500 py-3 font-semibold text-white transition hover:bg-violet-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {submitting ? "Submitting..." : "Submit Feedback"}
+              {submitting
+                ? "Saving..."
+                : editingId !== null
+                  ? "Update Feedback"
+                  : "Submit Feedback"}
             </button>
 
           </form>
         </div>
 
-        {/* Feedback list */}
+        {/* Feedback List */}
         <div>
 
           <div className="mb-6 flex items-center justify-between">
@@ -272,6 +372,7 @@ export default function Home() {
                   key={feedback.id}
                   className="rounded-xl border border-zinc-800 bg-[#191c28] p-5"
                 >
+
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="font-semibold">
                       {feedback.name}
@@ -294,6 +395,26 @@ export default function Home() {
                       feedback.created_at.replace(" ", "T") + "Z"
                     ).toLocaleString()}
                   </p>
+
+                  {/* Edit and Delete Buttons */}
+                  <div className="mt-4 flex gap-3 border-t border-zinc-800 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(feedback)}
+                      className="text-sm font-medium text-violet-400 transition hover:text-violet-300"
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(feedback.id)}
+                      className="text-sm font-medium text-red-400 transition hover:text-red-300"
+                    >
+                      Delete
+                    </button>
+                  </div>
+
                 </div>
               ))}
 
