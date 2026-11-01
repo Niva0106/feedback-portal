@@ -1,44 +1,106 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function Home() {
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
   const [rating, setRating] = useState(0);
 
-  // Temporary sample feedback.
-  // We will move this to SQLite later.
-  const [feedbackList, setFeedbackList] = useState([
-    {
-      id: 1,
-      name: "YOUR_MULEARN_ID",
-      message: "Excited to be part of the μLearn community!",
-      rating: 5,
-    },
-  ]);
+  const [feedbackList, setFeedbackList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  function handleSubmit(e) {
+  // Fetch feedback when the page loads
+  useEffect(() => {
+    async function fetchFeedback() {
+      try {
+        const response = await fetch("/api/feedback");
+
+        if (!response.ok) {
+          throw new Error("Unable to load feedback.");
+        }
+
+        const data = await response.json();
+        setFeedbackList(data);
+
+      } catch (err) {
+        setError(err.message);
+
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchFeedback();
+  }, []);
+
+  // Submit feedback to the backend
+  async function handleSubmit(e) {
     e.preventDefault();
 
-    if (!name.trim() || !message.trim() || rating === 0) {
-      alert("Please complete all fields and select a rating.");
+    setError("");
+    setSuccess("");
+
+    const cleanName = name.trim();
+    const cleanMessage = message.trim();
+
+    // Client-side validation
+    if (!cleanName || !cleanMessage || rating === 0) {
+      setError("Please complete all fields and select a rating.");
       return;
     }
 
-    const newFeedback = {
-      id: Date.now(),
-      name: name.trim(),
-      message: message.trim(),
-      rating,
-    };
+    if (cleanName.length > 50) {
+      setError("Name must not exceed 50 characters.");
+      return;
+    }
 
-    setFeedbackList([newFeedback, ...feedbackList]);
+    if (cleanMessage.length > 500) {
+      setError("Message must not exceed 500 characters.");
+      return;
+    }
 
-    setName("");
-    setMessage("");
-    setRating(0);
+    setSubmitting(true);
+
+    try {
+      const response = await fetch("/api/feedback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: cleanName,
+          message: cleanMessage,
+          rating,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to submit feedback.");
+      }
+
+      // Add the newly saved feedback to the list
+      setFeedbackList((previous) => [data, ...previous]);
+
+      // Clear the form
+      setName("");
+      setMessage("");
+      setRating(0);
+
+      setSuccess("Your feedback was submitted successfully!");
+
+    } catch (err) {
+      setError(err.message);
+
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -55,7 +117,7 @@ export default function Home() {
         </span>
       </nav>
 
-      {/* Hero section */}
+      {/* Hero */}
       <section className="mx-auto mb-12 mt-20 max-w-3xl text-center">
         <p className="mb-4 text-sm font-medium uppercase tracking-[0.25em] text-violet-400">
           Your feedback matters
@@ -99,6 +161,7 @@ export default function Home() {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                maxLength={50}
                 placeholder="Enter your name"
                 className="w-full rounded-lg border border-zinc-700 bg-[#10121b] px-4 py-3 text-sm outline-none transition focus:border-violet-400"
               />
@@ -113,10 +176,15 @@ export default function Home() {
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
+                maxLength={500}
                 placeholder="Share your thoughts..."
                 rows={5}
                 className="w-full resize-none rounded-lg border border-zinc-700 bg-[#10121b] px-4 py-3 text-sm outline-none transition focus:border-violet-400"
               />
+
+              <p className="mt-1 text-right text-xs text-zinc-500">
+                {message.length}/500
+              </p>
             </div>
 
             {/* Rating */}
@@ -144,12 +212,26 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Error and success messages */}
+            {error && (
+              <p className="text-sm text-red-400">
+                {error}
+              </p>
+            )}
+
+            {success && (
+              <p className="text-sm text-green-400">
+                {success}
+              </p>
+            )}
+
             {/* Submit */}
             <button
               type="submit"
-              className="w-full rounded-lg bg-violet-500 py-3 font-semibold text-white transition hover:bg-violet-600"
+              disabled={submitting}
+              className="w-full rounded-lg bg-violet-500 py-3 font-semibold text-white transition hover:bg-violet-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Submit Feedback
+              {submitting ? "Submitting..." : "Submit Feedback"}
             </button>
 
           </form>
@@ -174,33 +256,50 @@ export default function Home() {
             </span>
           </div>
 
-          <div className="space-y-4">
+          {loading ? (
+            <p className="text-sm text-zinc-400">
+              Loading feedback...
+            </p>
+          ) : feedbackList.length === 0 ? (
+            <p className="rounded-xl border border-zinc-800 p-6 text-sm text-zinc-400">
+              No feedback yet. Be the first to share your thoughts!
+            </p>
+          ) : (
+            <div className="space-y-4">
 
-            {feedbackList.map((feedback) => (
-              <div
-                key={feedback.id}
-                className="rounded-xl border border-zinc-800 bg-[#191c28] p-5"
-              >
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold">
-                    {feedback.name}
-                  </h3>
+              {feedbackList.map((feedback) => (
+                <div
+                  key={feedback.id}
+                  className="rounded-xl border border-zinc-800 bg-[#191c28] p-5"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="font-semibold">
+                      {feedback.name}
+                    </h3>
 
-                  <span className="text-yellow-400">
-                    {"★".repeat(feedback.rating)}
-                    <span className="text-zinc-600">
-                      {"★".repeat(5 - feedback.rating)}
+                    <span className="shrink-0 text-yellow-400">
+                      {"★".repeat(feedback.rating)}
+                      <span className="text-zinc-600">
+                        {"★".repeat(5 - feedback.rating)}
+                      </span>
                     </span>
-                  </span>
+                  </div>
+
+                  <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-400">
+                    {feedback.message}
+                  </p>
+
+                  <p className="mt-3 text-xs text-zinc-600">
+                    {new Date(
+                      feedback.created_at.replace(" ", "T") + "Z"
+                    ).toLocaleString()}
+                  </p>
                 </div>
+              ))}
 
-                <p className="mt-3 text-sm leading-6 text-zinc-400">
-                  {feedback.message}
-                </p>
-              </div>
-            ))}
+            </div>
+          )}
 
-          </div>
         </div>
 
       </section>
