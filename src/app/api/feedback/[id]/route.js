@@ -1,11 +1,11 @@
 
-import db from "@/lib/db";
-
-export const runtime = "nodejs";
+import db, { initializeDatabase } from "@/lib/db";
 
 // PUT: Update existing feedback
 export async function PUT(request, { params }) {
   try {
+    await initializeDatabase();
+
     const { id } = await params;
     const feedbackId = Number(id);
 
@@ -17,11 +17,12 @@ export async function PUT(request, { params }) {
     }
 
     // Check whether feedback exists
-    const existingFeedback = db.prepare(
-      "SELECT * FROM feedback WHERE id = ?"
-    ).get(feedbackId);
+    const existingFeedback = await db.execute({
+      sql: "SELECT * FROM feedback WHERE id = ?",
+      args: [feedbackId],
+    });
 
-    if (!existingFeedback) {
+    if (existingFeedback.rows.length === 0) {
       return Response.json(
         { error: "Feedback not found." },
         { status: 404 }
@@ -76,17 +77,21 @@ export async function PUT(request, { params }) {
     }
 
     // Update database record
-    db.prepare(`
-      UPDATE feedback
-      SET name = ?, message = ?, rating = ?
-      WHERE id = ?
-    `).run(cleanName, cleanMessage, rating, feedbackId);
+    await db.execute({
+      sql: `
+        UPDATE feedback
+        SET name = ?, message = ?, rating = ?
+        WHERE id = ?
+      `,
+      args: [cleanName, cleanMessage, rating, feedbackId],
+    });
 
-    const updatedFeedback = db.prepare(
-      "SELECT * FROM feedback WHERE id = ?"
-    ).get(feedbackId);
+    const updatedFeedback = await db.execute({
+      sql: "SELECT * FROM feedback WHERE id = ?",
+      args: [feedbackId],
+    });
 
-    return Response.json(updatedFeedback, { status: 200 });
+    return Response.json(updatedFeedback.rows[0], { status: 200 });
 
   } catch (error) {
     console.error("Error updating feedback:", error);
@@ -101,6 +106,8 @@ export async function PUT(request, { params }) {
 // DELETE: Remove existing feedback
 export async function DELETE(request, { params }) {
   try {
+    await initializeDatabase();
+
     const { id } = await params;
     const feedbackId = Number(id);
 
@@ -111,11 +118,12 @@ export async function DELETE(request, { params }) {
       );
     }
 
-    const result = db.prepare(
-      "DELETE FROM feedback WHERE id = ?"
-    ).run(feedbackId);
+    const result = await db.execute({
+      sql: "DELETE FROM feedback WHERE id = ?",
+      args: [feedbackId],
+    });
 
-    if (result.changes === 0) {
+    if (Number(result.rowsAffected) === 0) {
       return Response.json(
         { error: "Feedback not found." },
         { status: 404 }

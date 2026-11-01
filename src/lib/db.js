@@ -1,53 +1,44 @@
 
-import Database from "better-sqlite3";
-import path from "path";
-import fs from "fs";
+import { createClient } from "@libsql/client";
 
-// Store the database in a data folder at the project root.
-const dataDirectory = path.join(process.cwd(), "data");
+// Connect to the Turso database
+const db = createClient({
+  url: process.env.TURSO_DATABASE_URL,
+  authToken: process.env.TURSO_AUTH_TOKEN,
+});
 
-if (!fs.existsSync(dataDirectory)) {
-  fs.mkdirSync(dataDirectory, { recursive: true });
-}
+// Create the feedback table if it doesn't exist
+export async function initializeDatabase() {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      message TEXT NOT NULL,
+      rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
-const databasePath = path.join(dataDirectory, "feedback.db");
-
-// Reuse the database connection during Next.js development.
-const globalForDatabase = globalThis;
-
-const db =
-  globalForDatabase.feedbackDb ||
-  new Database(databasePath);
-
-if (process.env.NODE_ENV !== "production") {
-  globalForDatabase.feedbackDb = db;
-}
-
-// Create the feedback table if it doesn't exist.
-db.exec(`
-  CREATE TABLE IF NOT EXISTS feedback (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    message TEXT NOT NULL,
-    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-  )
-`);
-
-// Add sample feedback if the table is empty.
-const feedbackCount = db
-  .prepare("SELECT COUNT(*) AS count FROM feedback")
-  .get();
-
-if (feedbackCount.count === 0) {
-  db.prepare(`
-    INSERT INTO feedback (name, message, rating)
-    VALUES (?, ?, ?)
-  `).run(
-    "nivedithan@mulearn",
-    "Excited to be part of the μLearn community!",
-    5
+  // Add sample feedback if the table is empty
+  const result = await db.execute(
+    "SELECT COUNT(*) AS count FROM feedback"
   );
+
+  const count = Number(result.rows[0].count);
+
+  if (count === 0) {
+    await db.execute({
+      sql: `
+        INSERT INTO feedback (name, message, rating)
+        VALUES (?, ?, ?)
+      `,
+      args: [
+        "nivedithan@mulearn",
+        "Excited to be part of the μLearn community!",
+        5,
+      ],
+    });
+  }
 }
 
 export default db;

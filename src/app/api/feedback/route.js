@@ -1,18 +1,17 @@
 
-import db from "@/lib/db";
-
-// Ensure this route runs in Node.js.
-export const runtime = "nodejs";
+import db, { initializeDatabase } from "@/lib/db";
 
 // GET: Retrieve all feedback
 export async function GET() {
   try {
-    const feedback = db.prepare(`
+    await initializeDatabase();
+
+    const result = await db.execute(`
       SELECT * FROM feedback
       ORDER BY id DESC
-    `).all();
+    `);
 
-    return Response.json(feedback, { status: 200 });
+    return Response.json(result.rows, { status: 200 });
 
   } catch (error) {
     console.error("Error fetching feedback:", error);
@@ -27,8 +26,9 @@ export async function GET() {
 // POST: Submit new feedback
 export async function POST(request) {
   try {
-    const body = await request.json();
+    await initializeDatabase();
 
+    const body = await request.json();
     const { name, message, rating } = body;
 
     // Server-side validation
@@ -74,18 +74,22 @@ export async function POST(request) {
       );
     }
 
-    // Save feedback in SQLite
-    const result = db.prepare(`
-      INSERT INTO feedback (name, message, rating)
-      VALUES (?, ?, ?)
-    `).run(cleanName, cleanMessage, rating);
+    // Save feedback in Turso
+    const result = await db.execute({
+      sql: `
+        INSERT INTO feedback (name, message, rating)
+        VALUES (?, ?, ?)
+      `,
+      args: [cleanName, cleanMessage, rating],
+    });
 
     // Retrieve the newly created entry
-    const newFeedback = db.prepare(`
-      SELECT * FROM feedback WHERE id = ?
-    `).get(result.lastInsertRowid);
+    const newFeedback = await db.execute({
+      sql: "SELECT * FROM feedback WHERE id = ?",
+      args: [result.lastInsertRowid],
+    });
 
-    return Response.json(newFeedback, { status: 201 });
+    return Response.json(newFeedback.rows[0], { status: 201 });
 
   } catch (error) {
     console.error("Error submitting feedback:", error);
